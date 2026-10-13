@@ -17,7 +17,11 @@ _NO_DATA = "No shots for this filter"
 
 def _pitch() -> VerticalPitch:
     return VerticalPitch(
-        pitch_type="custom", pitch_length=PITCH_LENGTH, pitch_width=PITCH_WIDTH, half=True
+        pitch_type="custom",
+        pitch_length=PITCH_LENGTH,
+        pitch_width=PITCH_WIDTH,
+        half=True,
+        line_zorder=3,
     )
 
 
@@ -28,9 +32,9 @@ def _yerr(t: pd.DataFrame) -> np.ndarray:
     )
 
 
-def _placeholder() -> Figure:
+def _placeholder(msg: str = _NO_DATA) -> Figure:
     fig, ax = plt.subplots(figsize=(6, 3))
-    ax.text(0.5, 0.5, _NO_DATA, ha="center", va="center", fontsize=14, transform=ax.transAxes)
+    ax.text(0.5, 0.5, msg, ha="center", va="center", fontsize=14, transform=ax.transAxes)
     ax.set_axis_off()
     return fig
 
@@ -41,10 +45,12 @@ def plot_shot_map(locs: pd.DataFrame) -> Figure:
         return _placeholder()
     pitch = _pitch()
     fig, axs = pitch.draw(nrows=1, ncols=2, figsize=(12, 7))
+    # Own-half shots lie outside the half-pitch view; keep them out of the hexes.
+    att = locs[locs["x"] >= PITCH_LENGTH / 2]
     hb = pitch.hexbin(
-        locs["x"], locs["y"], ax=axs[0], gridsize=(12, 8), cmap="Blues", edgecolors="none"
+        att["x"], att["y"], ax=axs[0], gridsize=(12, 8), cmap="Blues", edgecolors="none", mincnt=1
     )
-    fig.colorbar(hb, ax=axs[0], shrink=0.6, label="Shots")
+    fig.colorbar(hb, ax=axs, shrink=0.6, label="Shots")
     axs[0].set_title("Shot density")
     goals = locs[locs["is_goal"].astype(bool)]
     pitch.scatter(
@@ -60,6 +66,16 @@ def plot_zone_conversion(grid: pd.DataFrame) -> Figure:
         return _placeholder()
     pitch = _pitch()
     fig, ax = pitch.draw(figsize=(7, 8))
+    # Cells with no shots have no grid row; grey background marks them as "too few" too.
+    ax.add_patch(
+        Rectangle(
+            (0, float(grid["x0"].min())),
+            PITCH_WIDTH,
+            PITCH_LENGTH - float(grid["x0"].min()),
+            facecolor="lightgrey",
+            zorder=1,
+        )
+    )
     vmax = float(grid["conversion"].max()) if grid["conversion"].notna().any() else 1.0
     norm, cmap = Normalize(vmin=0, vmax=vmax or 1.0), plt.get_cmap("YlOrRd")
     for r in grid.itertuples():
@@ -80,11 +96,11 @@ def plot_zone_conversion(grid: pd.DataFrame) -> Figure:
             ax.text(
                 (r.y0 + r.y1) / 2,
                 (r.x0 + r.x1) / 2,
-                f"{int(r.goals)}/{int(r.shots)}",
+                f"{int(r.goals)}\n/{int(r.shots)}",
                 ha="center",
                 va="center",
                 fontsize=7,
-                zorder=3,
+                zorder=4,
             )
     sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
     fig.colorbar(sm, ax=ax, shrink=0.6, label="Conversion")
@@ -114,6 +130,8 @@ def plot_goal_share(table: pd.DataFrame) -> Figure:
     """Q4: share of goals per box zone, labelled with percentages."""
     if table.empty:
         return _placeholder()
+    if table["goals"].sum() == 0:
+        return _placeholder("No goals for this filter")
     fig, ax = plt.subplots(figsize=(6, 4))
     share = table["share"].fillna(0)
     bars = ax.bar(table["box_zone"], share)
@@ -123,13 +141,13 @@ def plot_goal_share(table: pd.DataFrame) -> Figure:
     return fig
 
 
-def plot_rate_comparison(table: pd.DataFrame, group_col: str) -> Figure:
+def plot_rate_comparison(table: pd.DataFrame, group_col: str, labels: dict | None = None) -> Figure:
     """Q5: conversion with CI bars per group, each labelled with its shot count."""
     if table.empty:
         return _placeholder()
     fig, ax = plt.subplots(figsize=(7, 4))
-    labels = table[group_col].astype(str)
-    ax.bar(labels, table["conversion"], yerr=_yerr(table), capsize=4)
+    ticks = table[group_col].map(labels) if labels else table[group_col]
+    ax.bar(ticks.astype(str), table["conversion"], yerr=_yerr(table), capsize=4)
     for i, (hi, n) in enumerate(zip(table["ci_high"], table["shots"], strict=True)):
         ax.annotate(f"n={int(n)}", (i, hi), xytext=(0, 3), textcoords="offset points", ha="center")
     ax.set_ylim(0, float(table["ci_high"].max()) * 1.15)

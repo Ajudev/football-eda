@@ -51,7 +51,7 @@ def _cases(df: pd.DataFrame):
     }
 
 
-CASES = list(_cases(pd.DataFrame(columns=["x"])))
+CASES = ["shot_map", "zone", "distance", "goal_share", "situation", "header"]
 
 
 @pytest.mark.parametrize("name", CASES)
@@ -70,3 +70,43 @@ def test_zone_masked_cells_not_annotated(shots):
     grid = a.zone_grid(shots, min_shots=10_000)  # everything masked
     fig = p.plot_zone_conversion(grid)
     assert not fig.axes[0].texts
+
+
+def test_zone_mixed_masked_cells(shots):
+    grid = a.zone_grid(shots, min_shots=10)
+    n_ok = int(grid["conversion"].notna().sum())
+    assert 0 < n_ok < len(grid)
+    ax = p.plot_zone_conversion(grid).axes[0]
+    assert len(ax.texts) == n_ok
+
+
+def test_distance_curve_label_and_fit(shots):
+    ax = p.plot_distance_curve(a.distance_curve(shots), a.fit_distance_logit(shots)[1]).axes[0]
+    assert ax.get_xlabel() == "Distance to goal centre (m)"
+    assert len(ax.lines) >= 1
+
+
+def test_goal_share_percent_labels(shots):
+    ax = p.plot_goal_share(a.goal_share_by_box_zone(shots, True)).axes[0]
+    labels = [t.get_text() for t in ax.texts]
+    assert labels
+    assert all(x.endswith("%") for x in labels)
+
+
+def test_goal_share_no_goals_placeholder(shots):
+    df = shots.assign(is_goal=False)
+    fig = p.plot_goal_share(a.goal_share_by_box_zone(df, True))
+    assert [t.get_text() for t in fig.axes[0].texts] == ["No goals for this filter"]
+
+
+def test_shot_map_no_goals(shots):
+    assert isinstance(
+        p.plot_shot_map(a.shot_and_goal_locations(shots.assign(is_goal=False))), Figure
+    )
+
+
+def test_rate_comparison_n_labels_and_tick_map(shots):
+    t = a.header_table(shots)
+    ax = p.plot_rate_comparison(t, "is_header", {False: "Foot", True: "Header"}).axes[0]
+    assert len([x for x in ax.texts if x.get_text().startswith("n=")]) == len(t)
+    assert {x.get_text() for x in ax.get_xticklabels()} <= {"Foot", "Header"}
