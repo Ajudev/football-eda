@@ -110,3 +110,27 @@ def test_rate_comparison_n_labels_and_tick_map(shots):
     ax = p.plot_rate_comparison(t, "is_header", {False: "Foot", True: "Header"}).axes[0]
     assert len([x for x in ax.texts if x.get_text().startswith("n=")]) == len(t)
     assert {x.get_text() for x in ax.get_xticklabels()} <= {"Foot", "Header"}
+
+
+def test_shot_map_colorbar_does_not_overlap_pitches(shots):
+    fig = p.plot_shot_map(a.shot_and_goal_locations(shots))
+    cax = fig.axes[-1]
+    for ax in fig.axes[:2]:
+        assert not cax.get_position().overlaps(ax.get_position())
+
+
+def test_rate_comparison_partial_labels(shots):
+    t = a.situation_table(shots)
+    first = t["situation"].iloc[0]
+    ax = p.plot_rate_comparison(t, "situation", {first: "Renamed"}).axes[0]
+    ticks = [x.get_text() for x in ax.get_xticklabels()]
+    assert ticks[0] == "Renamed"
+    assert ticks[1:] == [str(v) for v in t["situation"].iloc[1:]]
+
+
+def test_zone_background_starts_at_halfway(shots):
+    grid = a.zone_grid(shots, min_shots=5)
+    grid = grid[grid["x0"] > 60]  # no shots in the first rows
+    ax = p.plot_zone_conversion(grid).axes[0]
+    bg = next(r for r in ax.patches if r.get_zorder() == 1 and hasattr(r, "get_y"))
+    assert bg.get_y() == 52.5

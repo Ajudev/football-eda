@@ -44,12 +44,15 @@ def plot_shot_map(locs: pd.DataFrame) -> Figure:
     if locs.empty:
         return _placeholder()
     pitch = _pitch()
-    fig, axs = pitch.draw(nrows=1, ncols=2, figsize=(12, 7))
+    fig, axs = plt.subplots(1, 2, figsize=(12, 7), layout="constrained")
+    for ax in axs:
+        pitch.draw(ax=ax)
     # Own-half shots lie outside the half-pitch view; keep them out of the hexes.
     att = locs[locs["x"] >= PITCH_LENGTH / 2]
     hb = pitch.hexbin(
         att["x"], att["y"], ax=axs[0], gridsize=(12, 8), cmap="Blues", edgecolors="none", mincnt=1
     )
+    # Constrained layout reserves the colorbar space so both pitches keep equal size.
     fig.colorbar(hb, ax=axs, shrink=0.6, label="Shots")
     axs[0].set_title("Shot density")
     goals = locs[locs["is_goal"].astype(bool)]
@@ -67,11 +70,12 @@ def plot_zone_conversion(grid: pd.DataFrame) -> Figure:
     pitch = _pitch()
     fig, ax = pitch.draw(figsize=(7, 8))
     # Cells with no shots have no grid row; grey background marks them as "too few" too.
+    x_start = min(float(grid["x0"].min()), PITCH_LENGTH / 2)
     ax.add_patch(
         Rectangle(
-            (0, float(grid["x0"].min())),
+            (0, x_start),
             PITCH_WIDTH,
-            PITCH_LENGTH - float(grid["x0"].min()),
+            PITCH_LENGTH - x_start,
             facecolor="lightgrey",
             zorder=1,
         )
@@ -146,11 +150,13 @@ def plot_rate_comparison(table: pd.DataFrame, group_col: str, labels: dict | Non
     if table.empty:
         return _placeholder()
     fig, ax = plt.subplots(figsize=(7, 4))
-    ticks = table[group_col].map(labels) if labels else table[group_col]
+    # Unmapped groups keep their raw name.
+    ticks = table[group_col].map(lambda v: (labels or {}).get(v, v))
     ax.bar(ticks.astype(str), table["conversion"], yerr=_yerr(table), capsize=4)
     for i, (hi, n) in enumerate(zip(table["ci_high"], table["shots"], strict=True)):
         ax.annotate(f"n={int(n)}", (i, hi), xytext=(0, 3), textcoords="offset points", ha="center")
     ax.set_ylim(0, float(table["ci_high"].max()) * 1.15)
     ax.set_ylabel("Conversion")
-    ax.set_xlabel(group_col)
+    if not labels:
+        ax.set_xlabel(group_col)
     return fig
