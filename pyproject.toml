@@ -1,0 +1,30 @@
+[project]
+name = "foot-eda"
+version = "0.1.0"
+description = "Football shot EDA dashboard (Understat)"
+requires-python = ">=3.12"
+dependencies = [
+    "pandas",
+    "pyarrow",
+    "matplotlib",
+    "mplsoccer",
+    "statsmodels",
+    "streamlit",
+    "soccerdata==1.9.1",
+]
+
+[dependency-groups]
+dev = ["pytest", "ruff"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/foot_eda"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
