@@ -65,7 +65,7 @@ def test_zone_grid_masks_and_excludes_penalties(shots):
 
 def test_distance_curve_and_fit(shots):
     curve = a.distance_curve(shots)
-    assert curve["shots"].sum() == ((shots.situation != "penalty") & (shots.distance <= 40)).sum()
+    assert curve["shots"].sum() == ((shots.situation != "penalty") & (shots.distance < 40)).sum()
     params, predict = a.fit_distance_logit(shots)
     assert params["distance"] < 0
     p = predict(np.array([5.0, 30.0]))
@@ -131,3 +131,69 @@ def test_fit_empty(empty):
     params, predict = a.fit_distance_logit(empty)
     assert params.empty
     assert np.isnan(predict(np.array([1.0]))).all()
+
+
+def test_fit_distance_logit_constant_distance_not_fittable():
+    df = pd.DataFrame(
+        {
+            "x": [90.0] * 3,
+            "y": [34.0] * 3,
+            "understat_situation": ["OpenPlay"] * 3,
+            "body_part": ["Head"] * 3,
+            "understat_xg": [0.1] * 3,
+            "is_goal": [True, False, False],
+        }
+    )
+    params, predict = a.fit_distance_logit(add_features(df))
+    assert params.empty
+    assert np.isnan(predict(np.array([5.0]))).all()
+
+
+def test_zone_grid_unmasked_cell_keeps_conversion():
+    n = 25
+    df = pd.DataFrame(
+        {
+            "x": [100.0] * n + [60.0],
+            "y": [34.0] * n + [10.0],
+            "understat_situation": ["OpenPlay"] * (n + 1),
+            "body_part": ["Head"] * (n + 1),
+            "understat_xg": [0.1] * (n + 1),
+            "is_goal": [True] * 5 + [False] * (n - 4),
+        }
+    )
+    out = a.zone_grid(add_features(df), min_shots=20)
+    big, small = out[out.shots == n], out[out.shots == 1]
+    assert big["conversion"].notna().all() and small["conversion"].isna().all()
+    assert big["conversion"].iloc[0] == pytest.approx(5 / n)
+
+
+def test_distance_curve_excludes_max_and_bins_boundary():
+    df = pd.DataFrame(
+        {
+            "x": [103.0, 65.0],
+            "y": [34.0, 34.0],
+            "understat_situation": ["OpenPlay"] * 2,
+            "body_part": ["Head"] * 2,
+            "understat_xg": [0.1] * 2,
+            "is_goal": [True, False],
+        }
+    )
+    f = add_features(df)
+    f["distance"] = [2.0, 40.0]
+    out = a.distance_curve(f)
+    assert out["d0"].tolist() == [2.0]
+
+
+def test_add_features_nan_situation_raises():
+    df = pd.DataFrame(
+        {
+            "x": [90.0],
+            "y": [34.0],
+            "understat_situation": [np.nan],
+            "body_part": ["Head"],
+            "understat_xg": [0.1],
+            "is_goal": [True],
+        }
+    )
+    with pytest.raises(ValueError):
+        add_features(df)

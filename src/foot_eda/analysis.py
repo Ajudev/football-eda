@@ -76,9 +76,9 @@ def zone_grid(
 def distance_curve(
     df: pd.DataFrame, bin_width: float = 2.0, max_distance: float = 40.0
 ) -> pd.DataFrame:
-    """Q3: conversion per distance bin [d0, d1) for non-penalty shots up to max_distance."""
+    """Q3: conversion per distance bin [d0, d1) for non-penalty shots below max_distance."""
     d = non_penalty(df)
-    d = d[d["distance"] <= max_distance] if not d.empty else d
+    d = d[d["distance"] < max_distance] if not d.empty else d
     if d.empty:
         return pd.DataFrame(columns=["d0", "d1", *_RATE_COLS])
     d = d.assign(d0=np.floor(d["distance"] / bin_width) * bin_width)
@@ -92,7 +92,7 @@ def fit_distance_logit(
 ) -> tuple[pd.Series, Callable[[np.ndarray], np.ndarray]]:
     """Q3: logistic fit of is_goal on distance (non-penalty). Empty params if not fittable."""
     d = non_penalty(df)
-    if d.empty or d["is_goal"].nunique() < 2:
+    if d.empty or d["is_goal"].nunique() < 2 or d["distance"].nunique() < 2:
         return pd.Series(dtype=float), lambda dist: np.full(np.shape(dist), np.nan)
     model = sm.Logit(d["is_goal"].astype(float), sm.add_constant(d[["distance"]])).fit(disp=0)
     params = model.params
