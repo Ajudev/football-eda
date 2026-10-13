@@ -6,14 +6,15 @@ Spike findings (soccerdata 1.9.1, `sd.Understat(...).read_shot_events()`, checke
   so no h_team/a_team/h_a logic is needed. `reset_index()` before `normalise_shots`.
 - Columns: league_id, season_id, game_id, date, shot_id, team_id, player_id,
   assist_player_id, assist_player, xg, location_x, location_y, minute, body_part,
-  situation, result. There is NO `last_action` column (schema column is left null).
+  situation, result. soccerdata drops `lastAction`; `fetch_shots` captures it from the
+  raw match JSON (wrapping `_read_match`) and adds a `last_action` column.
 - Labels are prettified: "Right Foot", "Left Foot", "Other", "Open Play", "From Corner",
   "Set Piece", "Direct Freekick", "Missed Shot", "Blocked Shot", "Saved Shot",
   "Shot On Post", "Own Goal", "Goal".
-- soccerdata's lookup tables lack `Head` and `Penalty`, so they come back as NA:
-  body_part NA -> Head (xG ~0.14, mostly corners/set pieces),
-  situation NA -> Penalty (all at x=0.885, y=0.5, xG ~0.76, ~84% goals).
-  Any other unknown label raises ValueError.
+- soccerdata's lookup tables lack Understat's `Head`, `OtherBodyPart` (it has the plural
+  `OtherBodyParts`) and `Penalty`, and turn ANY unmapped raw label into NA.
+  `_extend_soccerdata_labels` adds them, so NA now means a genuinely unknown label
+  and `normalise_shots` raises ValueError on it.
 """
 
 import argparse
@@ -32,14 +33,14 @@ _BODY_PART = {
     "Right Foot": "RightFoot",
     "Left Foot": "LeftFoot",
     "Other": "OtherBodyPart",
-    None: "Head",
+    "Head": "Head",
 }
 _SITUATION = {
     "Open Play": "OpenPlay",
     "From Corner": "FromCorner",
     "Set Piece": "SetPiece",
     "Direct Freekick": "DirectFreekick",
-    None: "Penalty",
+    "Penalty": "Penalty",
 }
 _RESULT = {
     "Goal": "Goal",
@@ -76,7 +77,7 @@ def normalise_shots(raw: pd.DataFrame) -> pd.DataFrame:
             "y_frac": df["location_y"].astype("float64"),
             "body_part": _map(df["body_part"], _BODY_PART, "body_part"),
             "understat_situation": _map(df["situation"], _SITUATION, "situation"),
-            "last_action": None,
+            "last_action": df.get("last_action"),
             "result": _map(df["result"], _RESULT, "result"),
             "understat_xg": df["xg"].astype("float64"),
         }
@@ -87,20 +88,38 @@ def normalise_shots(raw: pd.DataFrame) -> pd.DataFrame:
     return out[SCHEMA_COLUMNS].reset_index(drop=True)
 
 
+def _extend_soccerdata_labels() -> None:
+    """Teach soccerdata the Understat labels it maps to NA (see module docstring)."""
+    from soccerdata import understat
+
+    understat.SHOT_BODY_PARTS.update({"Head": "Head", "OtherBodyPart": "Other"})
+    understat.SHOT_SITUATIONS.update({"Penalty": "Penalty"})
+
+
 def fetch_shots(refresh: bool = False) -> pd.DataFrame:
     """Fetch all configured league/seasons from Understat and write the parquet file."""
     import soccerdata as sd  # lazy: keeps normalise/load importable without the client
 
+    _extend_soccerdata_labels()
     frames = []
     for league in config.LEAGUES:
         for season in config.SEASONS:
             reader = sd.Understat(leagues=league, seasons=season, no_cache=refresh)
-            frames.append(normalise_shots(reader.read_shot_events().reset_index()))
-    df = (
-        pd.concat(frames, ignore_index=True)
-        .drop_duplicates("shot_id")
-        .reset_index(drop=True)
-    )
+            last_action: dict[int, str | None] = {}
+            read_match = reader._read_match
+
+            def capture(url, match_id, _read=read_match, _store=last_action):
+                match = _read(url, match_id)
+                for side in (match or {}).get("shotsData", {}).values():
+                    for shot in side:
+                        _store[int(shot["id"])] = shot.get("lastAction")
+                return match
+
+            reader._read_match = capture
+            raw = reader.read_shot_events().reset_index()
+            raw["last_action"] = raw["shot_id"].map(last_action)
+            frames.append(normalise_shots(raw))
+    df = pd.concat(frames, ignore_index=True).drop_duplicates("shot_id").reset_index(drop=True)
     config.PROCESSED_PATH.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(config.PROCESSED_PATH, index=False)
     return df

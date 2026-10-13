@@ -36,11 +36,45 @@ def test_is_goal_only_for_goal(out):
     assert out["is_goal"].sum() == 2
 
 
-def test_missing_labels_become_head_and_penalty(out):
+def test_explicit_head_penalty_other_labels(out):
     r = out.set_index("shot_id")
     assert r.loc[1003, "body_part"] == "Head"
     assert r.loc[1004, "understat_situation"] == "Penalty"
+    assert r.loc[1006, "body_part"] == "OtherBodyPart"
+    assert r.loc[1003, "last_action"] == "Aerial"
     assert set(out["body_part"]) <= {"RightFoot", "LeftFoot", "Head", "OtherBodyPart"}
+
+
+@pytest.mark.parametrize("col", ["body_part", "situation"])
+def test_na_label_raises(col):
+    raw = pd.read_csv(FIXTURE, dtype={"season": str})
+    raw.loc[0, col] = pd.NA
+    with pytest.raises(ValueError, match=col):
+        data.normalise_shots(raw)
+
+
+def test_fetch_shots_dedups_refresh_and_writes(tmp_path, monkeypatch):
+    import soccerdata as sd
+
+    raw = pd.read_csv(FIXTURE, dtype={"season": str})
+    calls = []
+
+    class FakeUnderstat:
+        def __init__(self, leagues, seasons, no_cache):
+            calls.append(no_cache)
+
+        def _read_match(self, url, match_id):
+            return None
+
+        def read_shot_events(self):
+            return raw.drop(columns="last_action")
+
+    monkeypatch.setattr(sd, "Understat", FakeUnderstat)
+    monkeypatch.setattr(config, "PROCESSED_PATH", tmp_path / "p" / "shots.parquet")
+    df = data.fetch_shots(refresh=True)
+    assert calls == [True] * len(config.LEAGUES) * len(config.SEASONS)
+    assert df["shot_id"].is_unique and len(df) == 6
+    assert config.PROCESSED_PATH.exists()
 
 
 def test_unknown_label_raises():

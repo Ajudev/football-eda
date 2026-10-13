@@ -1,8 +1,8 @@
-league,season,game,team,player,league_id,season_id,game_id,date,shot_id,team_id,player_id,assist_player_id,assist_player,xg,location_x,location_y,minute,body_part,situation,result
-ENG-Premier League,2526,2025-08-15 Liverpool-Bournemouth,Liverpool,Player A,1,2025,28778,2025-08-15 19:00:00,1001,87,1,2,B,0.30,0.90,0.50,12,Right Foot,Open Play,Goal
-ENG-Premier League,2526,2025-08-15 Liverpool-Bournemouth,Bournemouth,Player C,1,2025,28778,2025-08-15 19:00:00,1002,73,3,4,D,0.05,0.75,0.30,30,Left Foot,Open Play,Missed Shot
-ENG-Premier League,2526,2025-08-15 Liverpool-Bournemouth,Liverpool,Player E,1,2025,28778,2025-08-15 19:00:00,1003,87,5,6,F,0.12,0.95,0.55,55,,From Corner,Saved Shot
-ENG-Premier League,2526,2025-08-15 Liverpool-Bournemouth,Bournemouth,Player G,1,2025,28778,2025-08-15 19:00:00,1004,73,7,,,0.76,0.885,0.50,70,Right Foot,,Goal
-ENG-Premier League,2526,2025-08-15 Liverpool-Bournemouth,Liverpool,Player H,1,2025,28778,2025-08-15 19:00:00,1005,87,8,9,I,0.02,0.97,0.40,80,Right Foot,Open Play,Own Goal
-ESP-La Liga,2526,2025-08-16 Barcelona-Getafe,Getafe,Player J,2,2025,28800,2025-08-16 17:00:00,1006,90,10,11,K,0.04,0.80,0.60,22,Other,Set Piece,Blocked Shot
-ESP-La Liga,2526,2025-08-16 Barcelona-Getafe,Barcelona,Player L,2,2025,28800,2025-08-16 17:00:00,1007,91,12,13,M,0.08,0.82,0.45,41,Left Foot,Direct Freekick,Shot On Post
+league,season,game,team,player,league_id,season_id,game_id,date,shot_id,team_id,player_id,assist_player_id,assist_player,xg,location_x,location_y,minute,body_part,situation,result,last_action
+ENG-Premier League,2526,2025-08-15 Liverpool-Bournemouth,Liverpool,Player A,1,2025,28778,2025-08-15 19:00:00,1001,87,1,2,B,0.30,0.90,0.50,12,Right Foot,Open Play,Goal,Pass
+ENG-Premier League,2526,2025-08-15 Liverpool-Bournemouth,Bournemouth,Player C,1,2025,28778,2025-08-15 19:00:00,1002,73,3,4,D,0.05,0.75,0.30,30,Left Foot,Open Play,Missed Shot,Cross
+ENG-Premier League,2526,2025-08-15 Liverpool-Bournemouth,Liverpool,Player E,1,2025,28778,2025-08-15 19:00:00,1003,87,5,6,F,0.12,0.95,0.55,55,Head,From Corner,Saved Shot,Aerial
+ENG-Premier League,2526,2025-08-15 Liverpool-Bournemouth,Bournemouth,Player G,1,2025,28778,2025-08-15 19:00:00,1004,73,7,,,0.76,0.885,0.50,70,Right Foot,Penalty,Goal,
+ENG-Premier League,2526,2025-08-15 Liverpool-Bournemouth,Liverpool,Player H,1,2025,28778,2025-08-15 19:00:00,1005,87,8,9,I,0.02,0.97,0.40,80,Right Foot,Open Play,Own Goal,Pass
+ESP-La Liga,2526,2025-08-16 Barcelona-Getafe,Getafe,Player J,2,2025,28800,2025-08-16 17:00:00,1006,90,10,11,K,0.04,0.80,0.60,22,Other,Set Piece,Blocked Shot,
+ESP-La Liga,2526,2025-08-16 Barcelona-Getafe,Barcelona,Player L,2,2025,28800,2025-08-16 17:00:00,1007,91,12,13,M,0.08,0.82,0.45,41,Left Foot,Direct Freekick,Shot On Post,Chipped
