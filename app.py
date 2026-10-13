@@ -24,7 +24,8 @@ st.set_page_config(page_title="Shot EDA", layout="wide")
 
 
 @st.cache_data
-def get_shots() -> pd.DataFrame:
+def get_shots(mtime: float) -> pd.DataFrame:
+    """`mtime` only keys the cache so a refreshed parquet is reloaded."""
     return add_features(load_shots())
 
 
@@ -32,15 +33,18 @@ def show(fig, table: pd.DataFrame, name: str) -> None:
     st.pyplot(fig)
     plt.close(fig)
     fmt = {c: "{:.1%}" for c in PCT_COLS if c in table.columns}
-    st.dataframe(table.style.format(fmt, na_rep="–"), width="stretch")
+    # Styler refuses > 262,144 cells; Q1 has no pct columns, so skip styling there.
+    styled = table.style.format(fmt, na_rep="–") if fmt else table
+    st.dataframe(styled, width="stretch")
     st.download_button(
         "Download CSV", table.to_csv(index=False), f"{name}.csv", "text/csv", key=f"dl_{name}"
     )
 
 
+parquet_mtime = config.PROCESSED_PATH.stat().st_mtime if config.PROCESSED_PATH.exists() else 0.0
 try:
     with st.spinner("Loading shots..."):
-        shots = get_shots()
+        shots = get_shots(parquet_mtime)
 except FileNotFoundError:
     st.error(f"Shot data not found. Fetch it first with: `{FETCH_CMD}`")
     st.stop()
@@ -105,10 +109,11 @@ with tabs[4]:
     sit = analysis.situation_table(df)
     show(plots.plot_rate_comparison(sit, "situation", SITUATION_LABELS), sit, "q5_situation")
     hdr = analysis.header_table(df)
-    show(plots.plot_rate_comparison(hdr, "is_header", HEADER_LABELS), hdr, "q5_header")
+    hdr_plot = plots.plot_rate_comparison(hdr, "is_header", HEADER_LABELS)
+    show(hdr_plot, hdr.assign(is_header=hdr["is_header"].map(HEADER_LABELS)), "q5_header")
 
 credit = "Data: [Understat](https://understat.com), for personal, non-commercial use."
-if config.PROCESSED_PATH.exists():
-    mtime = datetime.fromtimestamp(config.PROCESSED_PATH.stat().st_mtime)
+if parquet_mtime:
+    mtime = datetime.fromtimestamp(parquet_mtime)
     credit += f" Parquet last updated: {mtime:%Y-%m-%d %H:%M}."
 st.caption(credit)
