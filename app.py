@@ -116,6 +116,8 @@ with data_box:
             "Fetch",
         )
 
+# Consume the click flag before the load so a failed load cannot leave it armed for a later run.
+remove_armed = st.session_state.pop("remove_armed", False)
 parquet_mtime = config.PROCESSED_PATH.stat().st_mtime if config.PROCESSED_PATH.exists() else 0.0
 try:
     with st.spinner("Loading shots..."):
@@ -142,7 +144,7 @@ with data_box:
         st.session_state[confirm_key] = False
 
     st.button("Remove season", key="remove_btn", disabled=not confirm, on_click=_arm)
-    if st.session_state.pop("remove_armed", False):
+    if remove_armed:
 
         def _remove() -> str:
             n = data.remove_seasons(data_leagues, [remove_season])

@@ -356,3 +356,21 @@ def test_retry_after_failed_remove_needs_fresh_confirmation(app, monkeypatch):
     at.checkbox(key="confirm_remove_2526").check().run()
     _click(at, "remove_btn")
     assert len(calls) == 2
+
+
+def test_failed_load_on_click_does_not_remove_on_later_run(app, monkeypatch):
+    calls = []
+    monkeypatch.setattr(data, "remove_seasons", lambda leagues, seasons: calls.append(seasons) or 1)
+    at = app.run()
+    at.checkbox(key="confirm_remove_2526").check().run()
+
+    def boom():
+        raise FileNotFoundError("missing")
+
+    monkeypatch.setattr(data, "load_shots", boom)
+    st.cache_data.clear()
+    _click(at, "remove_btn")  # load fails -> st.stop()
+    monkeypatch.setattr(data, "load_shots", _raw)
+    st.cache_data.clear()
+    at.run()  # unrelated later run
+    assert calls == []
