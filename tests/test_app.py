@@ -337,3 +337,22 @@ def test_remove_error_shown_and_keeps_metrics(app, monkeypatch):
     _click(at, "remove_btn")
     assert any("Remove failed" in e.value for e in at.error)
     assert at.metric[0].value == "300"
+
+
+def test_retry_after_failed_remove_needs_fresh_confirmation(app, monkeypatch):
+    calls = []
+
+    def boom(leagues, seasons):
+        calls.append(seasons)
+        raise OSError("disk")
+
+    monkeypatch.setattr(data, "remove_seasons", boom)
+    at = app.run()
+    at.checkbox(key="confirm_remove_2526").check().run()
+    _click(at, "remove_btn")
+    assert any("Remove failed" in e.value for e in at.error)
+    assert not at.checkbox(key="confirm_remove_2526").value
+    assert at.button(key="remove_btn").disabled
+    at.checkbox(key="confirm_remove_2526").check().run()
+    _click(at, "remove_btn")
+    assert len(calls) == 2

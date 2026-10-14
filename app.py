@@ -132,14 +132,17 @@ with data_box:
     remove_season = st.selectbox(
         "Season to remove", sorted(shots["season"].unique(), reverse=True), key="remove_season"
     )
-    # Per-season key: changing the target drops the confirmation. After an attempt the
-    # box is cleared on the next run, before it is created (widget state is read-only after).
+    # Per-season key: changing the target drops the confirmation. The click callback
+    # snapshots the box and clears it, so every attempt (ok or failed) needs a fresh tick.
     confirm_key = f"confirm_remove_{remove_season}"
-    if st.session_state.pop("reset_confirm", False):
-        st.session_state[confirm_key] = False
     confirm = st.checkbox("Yes, permanently remove this season's data", key=confirm_key)
-    if st.button("Remove season", key="remove_btn", disabled=not confirm):
-        st.session_state["reset_confirm"] = True
+
+    def _arm() -> None:
+        st.session_state["remove_armed"] = st.session_state[confirm_key]
+        st.session_state[confirm_key] = False
+
+    st.button("Remove season", key="remove_btn", disabled=not confirm, on_click=_arm)
+    if st.session_state.pop("remove_armed", False):
 
         def _remove() -> str:
             n = data.remove_seasons(data_leagues, [remove_season])
