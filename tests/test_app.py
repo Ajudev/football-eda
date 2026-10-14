@@ -224,7 +224,14 @@ def test_missing_file_keeps_import_button(monkeypatch):
     assert not at.exception
 
 
-def test_lock_held_warns_and_skips_fetch(app, monkeypatch):
+@pytest.fixture
+def _clear_resource():
+    st.cache_resource.clear()
+    yield
+    st.cache_resource.clear()
+
+
+def test_lock_held_warns_and_skips_fetch(app, monkeypatch, _clear_resource):
     import sys
     import threading
 
@@ -236,14 +243,12 @@ def test_lock_held_warns_and_skips_fetch(app, monkeypatch):
         # Only the app's `_fetch_lock` gets the pre-acquired lock.
         return held if sys._getframe(1).f_code.co_filename == APP else real()
 
-    st.cache_resource.clear()
     monkeypatch.setattr(threading, "Lock", lock_factory)
     calls = []
     monkeypatch.setattr(data, "fetch_shots", _fake_fetch(calls))
     at = _click(app.run(), "import_btn")
     assert any("already running" in w.value for w in at.warning)
     assert calls == []
-    st.cache_resource.clear()
 
 
 def test_import_options_exclude_current_season(app):
@@ -260,7 +265,7 @@ def test_remove_requires_confirm_and_calls_remove(app, monkeypatch):
     monkeypatch.setattr(data, "remove_seasons", fake_remove)
     at = app.run()
     assert at.button(key="remove_btn").disabled
-    at.checkbox(key="confirm_remove").check().run()
+    at.checkbox(key="confirm_remove_2526").check().run()
     assert not at.button(key="remove_btn").disabled
     _click(at, "remove_btn")
     assert calls == [(at.multiselect(key="data_leagues").value, ["2526"])]
@@ -274,7 +279,61 @@ def test_remove_options_match_data(app):
 def test_remove_zero_rows_shows_info(app, monkeypatch):
     monkeypatch.setattr(data, "remove_seasons", lambda leagues, seasons: 0)
     at = app.run()
-    at.checkbox(key="confirm_remove").check().run()
+    at.checkbox(key="confirm_remove_2526").check().run()
     _click(at, "remove_btn")
     assert any("nothing removed" in i.value for i in at.info)
     assert not at.success
+
+
+def _hold_lock(monkeypatch):
+    import sys
+    import threading
+
+    held = threading.Lock()
+    held.acquire()
+    real = threading.Lock
+    monkeypatch.setattr(
+        threading, "Lock", lambda: held if sys._getframe(1).f_code.co_filename == APP else real()
+    )
+
+
+def test_remove_confirmation_resets_after_remove(app, monkeypatch):
+    monkeypatch.setattr(data, "remove_seasons", lambda leagues, seasons: 5)
+    at = app.run()
+    at.checkbox(key="confirm_remove_2526").check().run()
+    _click(at, "remove_btn")
+    assert not at.checkbox(key="confirm_remove_2526").value
+    assert at.button(key="remove_btn").disabled
+
+
+def test_missing_file_hides_remove_widgets(monkeypatch):
+    def boom():
+        raise FileNotFoundError("missing")
+
+    monkeypatch.setattr(data, "load_shots", boom)
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    assert not any(b.key == "remove_btn" for b in at.button)
+    assert not any(s.key == "remove_season" for s in at.selectbox)
+
+
+def test_remove_lock_held_warns_and_skips(app, monkeypatch, _clear_resource):
+    _hold_lock(monkeypatch)
+    calls = []
+    monkeypatch.setattr(data, "remove_seasons", lambda *a: calls.append(a) or 1)
+    at = app.run()
+    at.checkbox(key="confirm_remove_2526").check().run()
+    _click(at, "remove_btn")
+    assert any("already running" in w.value for w in at.warning)
+    assert calls == []
+
+
+def test_remove_error_shown_and_keeps_metrics(app, monkeypatch):
+    def boom(leagues, seasons):
+        raise FileNotFoundError("gone")
+
+    monkeypatch.setattr(data, "remove_seasons", boom)
+    at = app.run()
+    at.checkbox(key="confirm_remove_2526").check().run()
+    _click(at, "remove_btn")
+    assert any("Remove failed" in e.value for e in at.error)
+    assert at.metric[0].value == "300"

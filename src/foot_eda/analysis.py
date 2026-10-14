@@ -99,7 +99,8 @@ def fit_distance_logit(
 
     def predict(dist: np.ndarray) -> np.ndarray:
         z = params["const"] + params["distance"] * np.asarray(dist, dtype=float)
-        return 1.0 / (1.0 + np.exp(-z))
+        out: np.ndarray = 1.0 / (1.0 + np.exp(-z))
+        return out
 
     return params, predict
 

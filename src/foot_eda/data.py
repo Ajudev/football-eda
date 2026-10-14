@@ -19,7 +19,9 @@ Spike findings (soccerdata 1.9.1, `sd.Understat(...).read_shot_events()`, checke
 
 import argparse
 import os
+from collections.abc import Callable
 from datetime import date
+from typing import Any
 
 import pandas as pd
 
@@ -53,7 +55,7 @@ _RESULT = {
 }
 
 
-def _map(s: pd.Series, mapping: dict, name: str) -> pd.Series:
+def _map(s: pd.Series, mapping: dict[Any, Any], name: str) -> pd.Series:
     key = s.astype(object).where(s.notna(), None)
     out = key.map(mapping)
     bad = key[out.isna()].unique()
@@ -198,7 +200,12 @@ def fetch_shots(
             last_action: dict[int, str | None] = {}
             read_match = reader._read_match
 
-            def capture(url, match_id, _read=read_match, _store=last_action):
+            def capture(
+                url: str,
+                match_id: int,
+                _read: Callable[[str, int], dict[str, Any] | None] = read_match,
+                _store: dict[int, str | None] = last_action,
+            ) -> dict[str, Any] | None:
                 match = _read(url, match_id)
                 for side in (match or {}).get("shotsData", {}).values():
                     for shot in side:

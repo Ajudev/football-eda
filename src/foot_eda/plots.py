@@ -1,6 +1,7 @@
 """Plot functions, one per question. Draw frames from analysis.py; no aggregation here."""
 
 from collections.abc import Callable
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -25,11 +26,12 @@ def _pitch() -> VerticalPitch:
     )
 
 
-def _yerr(t: pd.DataFrame) -> np.ndarray:
+def _yerr(t: pd.DataFrame) -> np.ndarray[Any, Any]:
     # Clip: float rounding can make Wilson bounds cross conversion by ~1e-17.
-    return np.clip(
+    out: np.ndarray[Any, Any] = np.clip(
         np.vstack([t["conversion"] - t["ci_low"], t["ci_high"] - t["conversion"]]), 0, None
     )
+    return out
 
 
 def _placeholder(msg: str = _NO_DATA) -> Figure:
@@ -68,6 +70,7 @@ def plot_zone_conversion(grid: pd.DataFrame) -> Figure:
     if grid.empty:
         return _placeholder()
     pitch = _pitch()
+    fig: Figure
     fig, ax = pitch.draw(figsize=(7, 8))
     # Cells with no shots have no grid row; grey background marks them as "too few" too.
     x_start = min(float(grid["x0"].min()), PITCH_LENGTH / 2)
@@ -82,15 +85,16 @@ def plot_zone_conversion(grid: pd.DataFrame) -> Figure:
     )
     vmax = float(grid["conversion"].max()) if grid["conversion"].notna().any() else 1.0
     norm, cmap = Normalize(vmin=0, vmax=vmax or 1.0), plt.get_cmap("YlOrRd")
-    for r in grid.itertuples():
-        masked = pd.isna(r.conversion)
+    cols = ["y0", "x0", "y1", "x1", "conversion", "goals", "shots"]
+    for y0, x0, y1, x1, conversion, goals, shots in grid[cols].itertuples(index=False, name=None):
+        masked = pd.isna(conversion)
         # Vertical pitch: horizontal axis is y, vertical axis is x.
         ax.add_patch(
             Rectangle(
-                (r.y0, r.x0),
-                r.y1 - r.y0,
-                r.x1 - r.x0,
-                facecolor="lightgrey" if masked else cmap(norm(r.conversion)),
+                (y0, x0),
+                y1 - y0,
+                x1 - x0,
+                facecolor="lightgrey" if masked else cmap(norm(conversion)),
                 edgecolor="white",
                 alpha=0.9,
                 zorder=2,
@@ -98,9 +102,9 @@ def plot_zone_conversion(grid: pd.DataFrame) -> Figure:
         )
         if not masked:
             ax.text(
-                (r.y0 + r.y1) / 2,
-                (r.x0 + r.x1) / 2,
-                f"{int(r.goals)}\n/{int(r.shots)}",
+                (y0 + y1) / 2,
+                (x0 + x1) / 2,
+                f"{int(goals)}\n/{int(shots)}",
                 ha="center",
                 va="center",
                 fontsize=7,
@@ -145,7 +149,9 @@ def plot_goal_share(table: pd.DataFrame) -> Figure:
     return fig
 
 
-def plot_rate_comparison(table: pd.DataFrame, group_col: str, labels: dict | None = None) -> Figure:
+def plot_rate_comparison(
+    table: pd.DataFrame, group_col: str, labels: dict[Any, str] | None = None
+) -> Figure:
     """Q5: conversion with CI bars per group, each labelled with its shot count."""
     if table.empty:
         return _placeholder()

@@ -11,6 +11,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
+from matplotlib.figure import Figure
 
 from foot_eda import analysis, config, data, plots
 from foot_eda.features import add_features
@@ -73,10 +74,12 @@ def run_data_action(action: Callable[[], str], label: str) -> None:
         st.info("No rows matched; nothing removed.")
 
 
-def show(fig, table: pd.DataFrame, name: str) -> None:
+def show(fig: Figure, table: pd.DataFrame, name: str) -> None:
     st.pyplot(fig)
     plt.close(fig)
-    fmt = {c: "{:.1%}" for c in PCT_COLS if c in table.columns}
+    fmt: dict[str, str | Callable[[object], str] | None] = {
+        c: "{:.1%}" for c in PCT_COLS if c in table.columns
+    }
     # Styler refuses > 262,144 cells; Q1 has no pct columns, so skip styling there.
     styled = table.style.format(fmt, na_rep="–") if fmt else table
     st.dataframe(styled, width="stretch")
@@ -129,8 +132,14 @@ with data_box:
     remove_season = st.selectbox(
         "Season to remove", sorted(shots["season"].unique(), reverse=True), key="remove_season"
     )
-    confirm = st.checkbox("Yes, permanently remove this season's data", key="confirm_remove")
+    # Per-season key: changing the target drops the confirmation. After an attempt the
+    # box is cleared on the next run, before it is created (widget state is read-only after).
+    confirm_key = f"confirm_remove_{remove_season}"
+    if st.session_state.pop("reset_confirm", False):
+        st.session_state[confirm_key] = False
+    confirm = st.checkbox("Yes, permanently remove this season's data", key=confirm_key)
     if st.button("Remove season", key="remove_btn", disabled=not confirm):
+        st.session_state["reset_confirm"] = True
 
         def _remove() -> str:
             n = data.remove_seasons(data_leagues, [remove_season])
