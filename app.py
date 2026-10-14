@@ -1,13 +1,18 @@
-"""Streamlit dashboard: shot EDA on the local Understat parquet. No network access."""
+"""Streamlit dashboard: shot EDA on the local Understat parquet.
 
+Reads only the local parquet. The sidebar Data section is the one exception: its buttons call
+`data.fetch_shots` (network) and `data.remove_seasons` (local), guarded by a process-wide lock.
+"""
+
+import threading
+from collections.abc import Callable
 from datetime import datetime
 
 import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 
-from foot_eda import analysis, config, plots
-from foot_eda.data import load_shots
+from foot_eda import analysis, config, data, plots
 from foot_eda.features import add_features
 
 FETCH_CMD = "uv run python -m foot_eda.data"
@@ -26,7 +31,46 @@ st.set_page_config(page_title="Shot EDA", layout="wide")
 @st.cache_data
 def get_shots(mtime: float) -> pd.DataFrame:
     """`mtime` only keys the cache so a refreshed parquet is reloaded."""
-    return add_features(load_shots())
+    return add_features(data.load_shots())
+
+
+@st.cache_resource
+def _fetch_lock() -> threading.Lock:
+    """One lock per server process, shared by all sessions."""
+    return threading.Lock()
+
+
+def run_data_action(action: Callable[[], str], label: str) -> None:
+    """Run a data call under the process lock. `action` returns the success message.
+
+    An empty message means nothing changed (only remove can do that): show info, no rerun.
+    """
+    lock = _fetch_lock()
+    if not lock.acquire(blocking=False):
+        st.warning("A data fetch is already running.")
+        return
+    error, msg = None, ""
+    try:
+        with st.status(f"{label} in progress...", expanded=True) as status:
+            try:
+                msg = action()
+            except ValueError as e:
+                error = str(e)
+            except Exception as e:  # noqa: BLE001 - keep old data, show a short message
+                error = f"{label} failed: {type(e).__name__}: {e}"
+            status.update(
+                label=f"{label} failed" if error else f"{label} done",
+                state="error" if error else "complete",
+            )
+    finally:
+        lock.release()
+    if error:
+        st.error(error)
+    elif msg:
+        st.session_state["fetch_msg"] = msg
+        st.rerun()
+    else:
+        st.info("No rows matched; nothing removed.")
 
 
 def show(fig, table: pd.DataFrame, name: str) -> None:
@@ -41,24 +85,69 @@ def show(fig, table: pd.DataFrame, name: str) -> None:
     )
 
 
+st.title("Shot EDA: top 5 European leagues")
+if fetch_msg := st.session_state.pop("fetch_msg", None):
+    st.success(fetch_msg)
+
+current = data.current_season()
+data_box = st.sidebar.expander("Data")
+with data_box:
+    data_leagues = st.multiselect(
+        "Leagues to update", config.LEAGUES, default=config.LEAGUES, key="data_leagues"
+    )
+    import_options = [s for s in reversed(data.available_seasons()) if s != current]
+    import_season = st.selectbox("Past season", import_options, key="import_season")
+    if st.button("Import season", key="import_btn"):
+        run_data_action(
+            lambda: (
+                f"Imported {len(data.fetch_shots(data_leagues, [import_season])):,} shots for {import_season}."
+            ),
+            "Fetch",
+        )
+    force = st.checkbox("Force full re-download", key="force_refresh")
+    if st.button(f"Refresh current season ({current})", key="refresh_btn"):
+        run_data_action(
+            lambda: (
+                f"Refreshed {len(data.fetch_shots(data_leagues, [current], refresh=force)):,} shots for {current}."
+            ),
+            "Fetch",
+        )
+
 parquet_mtime = config.PROCESSED_PATH.stat().st_mtime if config.PROCESSED_PATH.exists() else 0.0
 try:
     with st.spinner("Loading shots..."):
         shots = get_shots(parquet_mtime)
 except FileNotFoundError:
-    st.error(f"Shot data not found. Fetch it first with: `{FETCH_CMD}`")
+    st.error(
+        "Shot data not found. Import a season from the Data section in the sidebar, "
+        f"or run: `{FETCH_CMD}`"
+    )
     st.stop()
 
-st.title("Shot EDA: top 5 European leagues")
+with data_box:
+    st.divider()
+    remove_season = st.selectbox(
+        "Season to remove", sorted(shots["season"].unique(), reverse=True), key="remove_season"
+    )
+    confirm = st.checkbox("Yes, permanently remove this season's data", key="confirm_remove")
+    if st.button("Remove season", key="remove_btn", disabled=not confirm):
+
+        def _remove() -> str:
+            n = data.remove_seasons(data_leagues, [remove_season])
+            return f"Removed {n:,} shots for {remove_season}." if n else ""
+
+        run_data_action(_remove, "Remove")
 
 with st.sidebar:
     st.header("Filters")
     all_leagues = sorted(shots["league"].unique())
-    leagues = st.multiselect("League", all_leagues, default=all_leagues)
+    leagues = st.multiselect("League", all_leagues, default=all_leagues, key="f_league")
     all_seasons = sorted(shots["season"].unique())
-    seasons = st.multiselect("Season", all_seasons, default=all_seasons[-1:])
+    seasons = st.multiselect("Season", all_seasons, default=all_seasons[-1:], key="f_season")
     teams = st.multiselect(
-        "Team (empty = all)", sorted(shots.loc[shots["league"].isin(leagues), "team"].unique())
+        "Team (empty = all)",
+        sorted(shots.loc[shots["league"].isin(leagues), "team"].unique()),
+        key="f_team",
     )
     include_pens = st.toggle("Include penalties in Q4", value=False)
     min_shots = st.slider("Min shots per Q2 grid cell", 5, 100, 20)

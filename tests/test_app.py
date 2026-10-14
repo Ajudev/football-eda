@@ -56,14 +56,14 @@ def test_renders(app):
 
 def test_league_filter_changes_shots(app):
     at = app.run()
-    at.multiselect[0].set_value(["ESP-La Liga"]).run()
+    at.multiselect(key="f_league").set_value(["ESP-La Liga"]).run()
     assert not at.exception
     assert at.metric[0].value == "150"
 
 
 def test_empty_filter_warns(app):
     at = app.run()
-    at.multiselect[0].set_value([]).run()
+    at.multiselect(key="f_league").set_value([]).run()
     assert not at.exception
     assert len(at.warning) == 1
 
@@ -80,12 +80,12 @@ def test_missing_file_shows_error(monkeypatch):
 
 def test_team_filter(app):
     at = app.run()
-    assert at.multiselect[2].options == ["Arsenal", "Barcelona"]
-    at.multiselect[2].set_value(["Arsenal"]).run()
+    assert at.multiselect(key="f_team").options == ["Arsenal", "Barcelona"]
+    at.multiselect(key="f_team").set_value(["Arsenal"]).run()
     assert not at.exception
     assert at.metric[0].value == "150"
-    at.multiselect[0].set_value(["ESP-La Liga"]).run()
-    assert at.multiselect[2].options == ["Barcelona"]
+    at.multiselect(key="f_league").set_value(["ESP-La Liga"]).run()
+    assert at.multiselect(key="f_team").options == ["Barcelona"]
 
 
 def test_season_defaults_to_latest(monkeypatch):
@@ -95,7 +95,7 @@ def test_season_defaults_to_latest(monkeypatch):
 
     monkeypatch.setattr(data, "load_shots", two_seasons)
     at = AppTest.from_file(APP, default_timeout=60).run()
-    assert at.multiselect[1].value == ["2526"]
+    assert at.multiselect(key="f_season").value == ["2526"]
     assert at.metric[0].value == "300"
 
 
@@ -153,3 +153,128 @@ def test_cache_reloads_when_parquet_changes(monkeypatch, tmp_path):
     at.run()
     assert len(calls) == 2
     assert not at.exception
+
+
+# --- Data section (Phase 5b) ---
+
+
+def _fake_fetch(calls, exc=None):
+    def fake(leagues=None, seasons=None, refresh=False):
+        calls.append({"leagues": leagues, "seasons": seasons, "refresh": refresh})
+        if exc:
+            raise exc
+        return _raw()
+
+    return fake
+
+
+def _click(at, key):
+    at.button(key=key).click().run()
+    return at
+
+
+def test_import_calls_fetch_and_shows_success(app, monkeypatch):
+    calls = []
+    monkeypatch.setattr(data, "fetch_shots", _fake_fetch(calls))
+    at = app.run()
+    at.selectbox(key="import_season").set_value("2425")
+    _click(at, "import_btn")
+    assert calls == [
+        {"leagues": at.multiselect(key="data_leagues").value, "seasons": ["2425"], "refresh": False}
+    ]
+    assert calls[0]["leagues"]
+    assert not at.exception
+    assert "Imported 300 shots for 2425" in at.success[0].value
+
+
+def test_refresh_current_season_and_force(app, monkeypatch):
+    calls = []
+    monkeypatch.setattr(data, "fetch_shots", _fake_fetch(calls))
+    at = app.run()
+    _click(at, "refresh_btn")
+    at.checkbox(key="force_refresh").check()
+    _click(at, "refresh_btn")
+    assert [(c["seasons"], c["refresh"]) for c in calls] == [
+        ([data.current_season()], False),
+        ([data.current_season()], True),
+    ]
+
+
+def test_value_error_shown_and_tabs_render(app, monkeypatch):
+    monkeypatch.setattr(data, "fetch_shots", _fake_fetch([], ValueError("bad season")))
+    at = _click(app.run(), "import_btn")
+    assert any("bad season" in e.value for e in at.error)
+    assert len(at.tabs) == 5
+
+
+def test_network_error_keeps_old_data(app, monkeypatch):
+    monkeypatch.setattr(data, "fetch_shots", _fake_fetch([], ConnectionError("down")))
+    at = _click(app.run(), "import_btn")
+    assert any("Fetch failed" in e.value for e in at.error)
+    assert at.metric[0].value == "300"
+
+
+def test_missing_file_keeps_import_button(monkeypatch):
+    def boom():
+        raise FileNotFoundError("missing")
+
+    monkeypatch.setattr(data, "load_shots", boom)
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    assert at.button(key="import_btn")
+    assert not at.exception
+
+
+def test_lock_held_warns_and_skips_fetch(app, monkeypatch):
+    import sys
+    import threading
+
+    held = threading.Lock()
+    held.acquire()
+    real = threading.Lock
+
+    def lock_factory():
+        # Only the app's `_fetch_lock` gets the pre-acquired lock.
+        return held if sys._getframe(1).f_code.co_filename == APP else real()
+
+    st.cache_resource.clear()
+    monkeypatch.setattr(threading, "Lock", lock_factory)
+    calls = []
+    monkeypatch.setattr(data, "fetch_shots", _fake_fetch(calls))
+    at = _click(app.run(), "import_btn")
+    assert any("already running" in w.value for w in at.warning)
+    assert calls == []
+    st.cache_resource.clear()
+
+
+def test_import_options_exclude_current_season(app):
+    assert data.current_season() not in app.run().selectbox(key="import_season").options
+
+
+def test_remove_requires_confirm_and_calls_remove(app, monkeypatch):
+    calls = []
+
+    def fake_remove(leagues, seasons):
+        calls.append((leagues, seasons))
+        return 5
+
+    monkeypatch.setattr(data, "remove_seasons", fake_remove)
+    at = app.run()
+    assert at.button(key="remove_btn").disabled
+    at.checkbox(key="confirm_remove").check().run()
+    assert not at.button(key="remove_btn").disabled
+    _click(at, "remove_btn")
+    assert calls == [(at.multiselect(key="data_leagues").value, ["2526"])]
+    assert "Removed 5 shots for 2526" in at.success[0].value
+
+
+def test_remove_options_match_data(app):
+    assert app.run().selectbox(key="remove_season").options == ["2526"]
+
+
+def test_remove_zero_rows_shows_info(app, monkeypatch):
+    monkeypatch.setattr(data, "remove_seasons", lambda leagues, seasons: 0)
+    at = app.run()
+    at.checkbox(key="confirm_remove").check().run()
+    _click(at, "remove_btn")
+    assert any("nothing removed" in i.value for i in at.info)
+    assert not at.success
